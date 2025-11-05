@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Apresentador Pro — Lousa</title>
+  <title>Apresentador Pro — Lousa (corrigido)</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
@@ -23,9 +23,8 @@
   </script>
   <style>
     .drag-handle { cursor: move; }
-    video:is([data-ready="false"]) { display: none; }
-    .smooth { transition: transform .15s ease, box-shadow .15s ease, border-radius .2s ease; }
-    .supports-backdrop:backdrop { backdrop-filter: blur(8px); }
+    video[data-ready="false"] { display: none; }
+    .smooth { transition: transform .15s ease, box-shadow .15s ease, border-radius .2s ease, width .15s ease, height .15s ease; }
   </style>
 </head>
 <body class="bg-gray-950 text-white min-h-screen">
@@ -33,7 +32,7 @@
     <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-3">
       <div class="flex items-center justify-between rounded-2xl bg-white/5 ring-1 ring-white/10 backdrop-blur px-4 py-2">
         <div class="flex items-center gap-2">
-          <div class="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" id="statusDot"></div>
+          <div class="h-2 w-2 rounded-full bg-white/40" id="statusDot"></div>
           <span class="font-semibold tracking-tight">Apresentador Pro — Lousa</span>
           <span class="text-xs text-white/60 hidden sm:inline" id="statusText">Pronto</span>
         </div>
@@ -47,17 +46,19 @@
     </div>
   </header>
 
-  <main class="relative h-[100dvh] w-full overflow-hidden" id="stage">
+  <main class="relative h-[100dvh] w-full overflow-hidden pt-16" id="stage">
+    <!-- Tela compartilhada -->
     <video id="screenVideo" autoplay playsinline data-ready="false"
            class="absolute inset-0 h-full w-full object-contain bg-gray-900"></video>
 
-    <div id="webcamWrap" class="absolute left-4 bottom-4 z-30 hidden">
-      <div class="drag-handle absolute -top-3 -left-3 bg-brand-600 text-white text-[10px] px-2 py-1 rounded-md shadow ring-1 ring-white/10 select-none">
+    <!-- Bolha da webcam -->
+    <div id="webcamWrap" class="absolute left-4 bottom-4 z-30 hidden select-none">
+      <div id="dragHandle" class="drag-handle absolute -top-3 -left-3 bg-brand-600 text-white text-[10px] px-2 py-1 rounded-md shadow ring-1 ring-white/10">
         arraste
       </div>
       <video id="webcamVideo" autoplay muted playsinline data-ready="false"
              class="smooth h-[220px] w-[220px] object-cover rounded-full ring-4 ring-brand-600 shadow-xl"></video>
-      <div class="mt-2 flex items-center gap-2">
+      <div class="mt-2 flex items-center gap-2 select-auto">
         <button id="btnShape" class="text-xs bg-white/10 hover:bg-white/20 px-2 py-1 rounded">Forma</button>
         <button id="btnFlip" class="text-xs bg-white/10 hover:bg-white/20 px-2 py-1 rounded">Espelhar</button>
         <button id="btnCorner" class="text-xs bg-white/10 hover:bg-white/20 px-2 py-1 rounded">Snap canto</button>
@@ -65,7 +66,8 @@
       </div>
     </div>
 
-    <section id="panel" class="pointer-events-auto fixed right-4 top-20 z-40 w-[320px] max-w-[92vw] rounded-2xl bg-white/5 ring-1 ring-white/10 backdrop-blur p-4 space-y-3">
+    <!-- Painel -->
+    <section id="panel" class="pointer-events-auto fixed right-4 top-24 z-40 w-[320px] max-w-[92vw] rounded-2xl bg-white/5 ring-1 ring-white/10 backdrop-blur p-4 space-y-3">
       <h2 class="text-sm font-semibold tracking-tight">Controles</h2>
       <div class="grid grid-cols-2 gap-2">
         <button id="btnScreen" class="col-span-2 bg-white/10 hover:bg-white/20 rounded-lg px-3 py-2 text-sm">Compartilhar tela</button>
@@ -75,7 +77,7 @@
       </div>
       <p id="tip" class="text-xs text-white/60">Dica: arraste a bolha da câmera; use “Forma”, “Espelhar” e “Snap canto”.</p>
       <div id="warn" class="hidden text-xs rounded-lg bg-amber-500/20 text-amber-200 p-2">
-        Captura de tela pode estar bloqueada no preview do navegador.
+        A captura de tela pode ser bloqueada em previews. Publique a página para testar display-capture.
       </div>
     </section>
 
@@ -83,16 +85,205 @@
   </main>
 
   <script>
-    const screenVideo = document.getElementById('screenVideo');
-    const webcamVideo = document.getElementById('webcamVideo');
-    let flipped = false;
+    document.addEventListener('DOMContentLoaded', () => {
+      // --- Refs
+      const statusDot = document.getElementById('statusDot');
+      const statusText = document.getElementById('statusText');
+      const btnStart = document.getElementById('btnStart');
+      const btnStop = document.getElementById('btnStop');
+      const btnScreen = document.getElementById('btnScreen');
+      const btnWebcam = document.getElementById('btnWebcam');
+      const btnMic = document.getElementById('btnMic');
+      const btnReset = document.getElementById('btnReset');
+      const toast = document.getElementById('toast');
+      const warn = document.getElementById('warn');
 
-    // Ajuste: câmera não espelhada por padrão
-    webcamVideo.style.transform = 'none';
+      const screenVideo = document.getElementById('screenVideo');
+      const webcamVideo = document.getElementById('webcamVideo');
+      const webcamWrap = document.getElementById('webcamWrap');
+      const dragHandle = document.getElementById('dragHandle');
+      const sizeRange = document.getElementById('sizeRange');
+      const btnShape = document.getElementById('btnShape');
+      const btnFlip = document.getElementById('btnFlip');
+      const btnCorner = document.getElementById('btnCorner');
 
-    document.getElementById('btnFlip').addEventListener('click', () => {
-      flipped = !flipped;
-      webcamVideo.style.transform = flipped ? 'scaleX(-1)' : 'none';
+      // --- State
+      let screenStream = null;
+      let webcamStream = null;
+      let micOn = true;
+      let isCircle = true;
+      let flipped = false; // default: NÃO espelhado
+      let snapIndex = 0;
+
+      // Garante não espelhado no load
+      webcamVideo.style.transform = 'none';
+
+      // --- Utils
+      function showToast(msg, ok=true){
+        toast.textContent = msg;
+        toast.className = `fixed left-1/2 -translate-x-1/2 top-5 z-50 rounded-lg px-4 py-2 shadow-lg ${ok? 'bg-emerald-600':'bg-rose-600'} text-white`;
+        toast.style.display = 'block';
+        clearTimeout(showToast._t);
+        showToast._t = setTimeout(()=> toast.style.display='none', 2200);
+      }
+      function setStatus(text, active){
+        statusText.textContent = text;
+        statusDot.className = `h-2 w-2 rounded-full ${active? 'bg-emerald-400 animate-pulse':'bg-white/40'}`;
+      }
+      function attachStream(videoEl, stream){
+        videoEl.srcObject = stream;
+        videoEl.dataset.ready = 'true';
+      }
+      function detachStream(videoEl){
+        if(videoEl.srcObject){
+          try { videoEl.srcObject.getTracks().forEach(t=>t.stop()); } catch(e){}
+        }
+        videoEl.srcObject = null;
+        videoEl.dataset.ready = 'false';
+      }
+
+      // --- Media
+      async function startDisplay(){
+        try{
+          const disp = await navigator.mediaDevices.getDisplayMedia({
+            video: { cursor: 'always' },
+            audio: { echoCancellation: true, noiseSuppression: true }
+          });
+          screenStream = disp;
+          attachStream(screenVideo, disp);
+          setStatus('Apresentando a tela…', true);
+          const track = disp.getVideoTracks()[0];
+          track.onended = stopAll;
+          showToast('Tela compartilhada');
+        }catch(err){
+          console.warn('Display error:', err);
+          warn.classList.remove('hidden');
+          showToast('Não foi possível compartilhar a tela', false);
+        }
+      }
+
+      async function startWebcam(){
+        try{
+          const cam = await navigator.mediaDevices.getUserMedia({
+            video: { width: {ideal: 1280}, height: {ideal: 720} },
+            audio: false
+          });
+          webcamStream = cam;
+          attachStream(webcamVideo, cam);
+          webcamWrap.classList.remove('hidden');
+          // posiciona no canto inferior esquerdo por padrão
+          webcamWrap.style.left = '16px';
+          webcamWrap.style.top  = `calc(100% - ${webcamWrap.offsetHeight + 24}px)`;
+          showToast('Câmera ligada');
+        }catch(err){
+          console.warn('Webcam error:', err);
+          showToast('Permita acesso à câmera', false);
+        }
+      }
+
+      function stopAll(){
+        if(screenStream){ screenStream.getTracks().forEach(t=>t.stop()); screenStream = null; }
+        if(webcamStream){ webcamStream.getTracks().forEach(t=>t.stop()); webcamStream = null; }
+        detachStream(screenVideo);
+        detachStream(webcamVideo);
+        webcamWrap.classList.add('hidden');
+        btnStop.classList.add('hidden');
+        btnStart.classList.remove('hidden');
+        setStatus('Pronto', false);
+        showToast('Apresentação encerrada');
+      }
+
+      // --- Dragging (somente pelo handle)
+      let dragging = false, offX = 0, offY = 0;
+      dragHandle.addEventListener('mousedown', (e)=>{
+        dragging = true;
+        const rect = webcamWrap.getBoundingClientRect();
+        offX = e.clientX - rect.left; offY = e.clientY - rect.top;
+        document.body.style.userSelect = 'none';
+      });
+      document.addEventListener('mousemove', (e)=>{
+        if(!dragging) return;
+        const maxX = window.innerWidth - webcamWrap.offsetWidth - 8;
+        const maxY = window.innerHeight - webcamWrap.offsetHeight - 8;
+        let x = Math.max(8, Math.min(e.clientX - offX, maxX));
+        let y = Math.max(8, Math.min(e.clientY - offY, maxY));
+        webcamWrap.style.left = x + 'px';
+        webcamWrap.style.top = y + 'px';
+      });
+      document.addEventListener('mouseup', ()=>{
+        dragging = false; document.body.style.userSelect='';
+      });
+
+      // --- UI actions
+      btnStart.addEventListener('click', async ()=>{
+        btnStart.classList.add('hidden');
+        btnStop.classList.remove('hidden');
+        // liga câmera primeiro (para já aparecer)
+        await startWebcam();
+        // tenta compartilhar a tela; se falhar, câmera segue ativa
+        await startDisplay();
+      });
+      btnStop.addEventListener('click', stopAll);
+      btnScreen.addEventListener('click', startDisplay);
+      btnWebcam.addEventListener('click', startWebcam);
+      btnMic.addEventListener('click', ()=>{
+        micOn = !micOn;
+        if(screenStream){ screenStream.getAudioTracks().forEach(t=> t.enabled = micOn); }
+        btnMic.textContent = micOn ? 'Mic (tela) ligado' : 'Mic (tela) mudo';
+        showToast(micOn? 'Microfone ligado' : 'Microfone mutado', micOn);
+      });
+      btnReset.addEventListener('click', ()=>{
+        // tamanho e forma
+        sizeRange.value = 220;
+        webcamVideo.style.width = '220px';
+        webcamVideo.style.height = '220px';
+        isCircle = true; webcamVideo.style.borderRadius = '9999px';
+        // posição
+        webcamWrap.style.left = '16px';
+        webcamWrap.style.top  = `calc(100% - ${webcamWrap.offsetHeight + 24}px)`;
+        // flip
+        flipped = false;
+        webcamVideo.style.transform = 'none';
+      });
+      sizeRange.addEventListener('input', (e)=>{
+        const v = e.target.value;
+        webcamVideo.style.width = v+'px';
+        webcamVideo.style.height = v+'px';
+      });
+      btnShape.addEventListener('click', ()=>{
+        isCircle = !isCircle;
+        webcamVideo.style.borderRadius = isCircle ? '9999px' : '1rem';
+      });
+      btnFlip.addEventListener('click', ()=>{
+        flipped = !flipped;
+        webcamVideo.style.transform = flipped ? 'scaleX(-1)' : 'none';
+      });
+      btnCorner.addEventListener('click', ()=>{
+        const corners = [
+          { left: 'calc(100% - var(--w) - 16px)', top: 'calc(100% - var(--h) - 16px)' },
+          { left: '16px', top: 'calc(100% - var(--h) - 16px)' },
+          { left: 'calc(100% - var(--w) - 16px)', top: '16px' },
+          { left: '16px', top: '16px' }
+        ];
+        const w = webcamWrap.offsetWidth + 'px';
+        const h = webcamWrap.offsetHeight + 'px';
+        webcamWrap.style.setProperty('--w', w);
+        webcamWrap.style.setProperty('--h', h);
+        const c = corners[snapIndex % corners.length];
+        webcamWrap.style.left = c.left; webcamWrap.style.top = c.top; snapIndex++;
+      });
+
+      // aviso de preview
+      warn.classList.remove('hidden');
+
+      // manter visível em redimensionamento
+      window.addEventListener('resize', ()=>{
+        const rect = webcamWrap.getBoundingClientRect();
+        const maxX = window.innerWidth - webcamWrap.offsetWidth - 8;
+        const maxY = window.innerHeight - webcamWrap.offsetHeight - 8;
+        if(rect.right > window.innerWidth) webcamWrap.style.left = maxX + 'px';
+        if(rect.bottom > window.innerHeight) webcamWrap.style.top = maxY + 'px';
+      });
     });
   </script>
 </body>
