@@ -3,215 +3,292 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Apresentador Duo — Controlador + Transmissão (robusto)</title>
+  <title>One‑Deck Presenter — App exclusivo para uma apresentação</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <!-- pdf.js para suportar PDF exportado do PPT -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <script>
     tailwind.config = {
       theme: {
         extend: {
-          colors: { brand: { 600:'#4f46e5',700:'#4338ca',800:'#3730a3' } },
-          boxShadow: { glow: '0 10px 30px rgba(79,70,229,.45)'}
+          colors: {
+            brand: { 50:'#eef2ff', 100:'#e0e7ff', 600:'#4f46e5', 700:'#4338ca', 800:'#3730a3' },
+            base: { 900:'#0b0f1a', 800:'#0f172a', 700:'#111827', 600:'#1f2937' }
+          },
+          boxShadow: {
+            glass: '0 8px 30px rgba(2,6,23,.35)',
+            glow: '0 10px 30px rgba(79,70,229,.45)'
+          }
         }
       }
     }
   </script>
   <style>
-    .btn{ @apply rounded-lg px-3 py-2 text-sm font-semibold bg-white/10 hover:bg-white/20; }
+    html,body { background: radial-gradient(1200px 800px at 80% -10%, rgba(79,70,229,.25), transparent 60%), #0b0f1a; }
+    .glass { backdrop-filter: blur(10px); background: linear-gradient( to bottom, rgba(255,255,255,.08), rgba(255,255,255,.04)); }
+    .btn { @apply rounded-xl px-4 py-2 text-sm font-semibold shadow-glow; }
+    .btn-primary { @apply bg-brand-600 hover:bg-brand-700 active:bg-brand-800 text-white; }
+    .btn-ghost { @apply bg-white/10 hover:bg-white/20 text-white; }
+    video[data-ready="false"] { display: none; }
+    #camBubble { cursor: move; }
   </style>
 </head>
-<body class="bg-gray-950 text-white min-h-screen">
-  <!-- =================== CONTROLADOR (esta janela) =================== -->
+<body class="text-white min-h-screen">
+  <!-- Header: título + ações -->
   <header class="fixed top-0 inset-x-0 z-40">
-    <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-3">
-      <div class="flex items-center justify-between rounded-2xl bg-white/5 ring-1 ring-white/10 backdrop-blur px-4 py-2">
-        <div class="flex items-center gap-2">
-          <div id="statusDot" class="h-2 w-2 rounded-full bg-white/40"></div>
-          <span class="font-semibold tracking-tight">Apresentador Duo — Controlador</span>
-          <span id="statusText" class="text-xs text-white/60 hidden sm:inline">Pronto</span>
+    <div class="mx-auto max-w-[1400px] px-4 sm:px-6 lg:px-8 py-4">
+      <div class="glass ring-1 ring-white/10 rounded-2xl px-4 py-3 shadow-glass flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <div class="h-2.5 w-2.5 rounded-full bg-emerald-400 animate-pulse" id="statusDot"></div>
+          <h1 class="text-base font-semibold tracking-tight">One‑Deck Presenter</h1>
+          <span id="deckTitle" class="text-xs text-white/60 hidden sm:inline">Sem apresentação carregada</span>
         </div>
         <div class="flex items-center gap-2">
-          <button id="btnOpen" class="btn">Abrir janela de transmissão</button>
-          <button id="btnStart" class="btn bg-brand-600 hover:bg-brand-700">Iniciar apresentação</button>
-          <button id="btnStop" class="btn hidden">Encerrar</button>
+          <label class="btn btn-ghost cursor-pointer">
+            <input type="file" id="fileInput" accept=".pdf,.png,.jpg,.jpeg,.webp" multiple class="hidden" />
+            📂 Carregar apresentação
+          </label>
+          <button id="openViewer" class="btn btn-ghost">Abrir janela do público</button>
         </div>
       </div>
     </div>
   </header>
 
-  <main class="pt-20 max-w-7xl mx-auto px-4 grid gap-4 lg:grid-cols-3">
-    <section class="lg:col-span-2 rounded-2xl bg-white/5 ring-1 ring-white/10 p-4">
-      <h2 class="text-sm font-semibold mb-3">Controles</h2>
-      <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">
-        <button id="cmdShare" class="btn">Selecionar Tela/Janela</button>
-        <button id="cmdCam" class="btn">Ligar Câmera</button>
-        <button id="cmdMic" class="btn">Mic: ligado</button>
-        <button id="cmdFlip" class="btn">Espelhar câmera</button>
-        <button id="cmdShape" class="btn">Forma: circular</button>
-        <div class="flex gap-2">
-          <button data-pos="tl" class="btn w-full">↖ topo-esq</button>
-          <button data-pos="tr" class="btn w-full">↗ topo-dir</button>
-        </div>
-        <div class="flex gap-2">
-          <button data-pos="bl" class="btn w-full">↙ base-esq</button>
-          <button data-pos="br" class="btn w-full">↘ base-dir</button>
-        </div>
-        <button id="cmdSizeSmall" class="btn">Câmera: pequena</button>
-        <button id="cmdSizeLarge" class="btn">Câmera: grande</button>
-        <button id="cmdReset" class="btn">Reset palco</button>
-      </div>
-      <p class="text-xs text-white/60 mt-3">Dica: se o navegador bloquear pop-up, permita para este site. A captura de tela sempre é pedida <u>na janela de transmissão</u> (evita tela preta).</p>
-    </section>
+  <!-- Layout principal: thumbnails + palco -->
+  <main class="pt-24 pb-28 mx-auto max-w-[1400px] px-4 sm:px-6 lg:px-8">
+    <div class="grid grid-cols-12 gap-4">
+      <!-- Thumbs -->
+      <aside class="col-span-3 hidden md:block">
+        <div class="glass ring-1 ring-white/10 rounded-2xl p-3 max-h-[78vh] overflow-auto" id="thumbs"></div>
+      </aside>
 
-    <section class="rounded-2xl bg-white/5 ring-1 ring-white/10 p-4">
-      <h2 class="text-sm font-semibold mb-3">Fluxo recomendado</h2>
-      <ol class="list-decimal list-inside text-sm text-white/80 space-y-2">
-        <li>Clique em <b>Abrir janela de transmissão</b>.</li>
-        <li>Clique em <b>Iniciar apresentação</b> — a janela de transmissão vai pedir <i>Compartilhar tela</i> e <i>acesso à câmera</i>.</li>
-        <li>Use os botões acima para posicionar/espelhar a câmera e mutar/desmutar o mic.</li>
-      </ol>
-    </section>
+      <!-- Stage -->
+      <section class="col-span-12 md:col-span-9">
+        <div class="relative rounded-2xl ring-1 ring-white/10 glass shadow-glass overflow-hidden">
+          <canvas id="stage" class="w-full h-[68vh] bg-base-800"></canvas>
+
+          <!-- Bolha da câmera opcional -->
+          <div id="camBubble" class="absolute right-4 bottom-4 w-[220px] h-[220px] rounded-full ring-4 ring-brand-600 overflow-hidden shadow-xl hidden select-none">
+            <video id="camVideo" autoplay muted playsinline data-ready="false" class="w-full h-full object-cover"></video>
+          </div>
+
+          <!-- Marca d'água de segurança / instrução -->
+          <div id="hint" class="absolute inset-x-0 bottom-3 text-center text-xs text-white/60">Dica: Abra a janela do público e compartilhe <span class="font-semibold">apenas aquela janela</span> no Meet/Zoom/Teams.</div>
+        </div>
+      </section>
+    </div>
   </main>
 
-  <div id="toast" class="fixed left-1/2 -translate-x-1/2 top-5 z-50 hidden rounded-lg bg-emerald-600 text-white px-4 py-2 shadow-lg"></div>
+  <!-- Barra de controle (do apresentador) -->
+  <footer class="fixed bottom-0 inset-x-0 z-40">
+    <div class="mx-auto max-w-[1400px] px-4 sm:px-6 lg:px-8 pb-4">
+      <div class="glass ring-1 ring-white/10 rounded-2xl px-3 py-2 shadow-glass">
+        <div class="flex items-center gap-3">
+          <button id="prev" class="btn btn-ghost">◀ Anterior</button>
+          <button id="play" class="btn btn-primary">▶ Reproduzir</button>
+          <button id="next" class="btn btn-ghost">Próximo ▶</button>
+
+          <div class="flex-1 h-2 bg-white/10 rounded-full mx-4 relative">
+            <div id="progress" class="absolute inset-y-0 left-0 bg-brand-600 rounded-full" style="width:0%"></div>
+          </div>
+          <span id="counter" class="text-xs text-white/70 min-w-[68px] text-right">0 / 0</span>
+
+          <div class="ml-2 flex items-center gap-2">
+            <button id="toggleCam" class="btn btn-ghost">🎥 Câmera</button>
+            <button id="flipCam" class="btn btn-ghost">↔ Espelhar</button>
+            <button id="shapeCam" class="btn btn-ghost">⬛/⬤ Forma</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Toast -->
+  <div id="toast" class="fixed left-1/2 -translate-x-1/2 top-5 z-50 hidden rounded-xl bg-emerald-600 text-white px-4 py-2 shadow-lg"></div>
 
   <script>
-    // ===== Canal de comunicação entre janelas
-    const CH = new BroadcastChannel('duo-presenter');
-    let pop = null; // janela de transmissão
-
-    const qs = (sel) => document.querySelector(sel);
-    const toast = (msg, ok=true)=>{
-      const el = qs('#toast');
-      el.textContent = msg;
-      el.className = `fixed left-1/2 -translate-x-1/2 top-5 z-50 rounded-lg px-4 py-2 shadow-lg ${ok? 'bg-emerald-600':'bg-rose-600'} text-white`;
-      el.style.display='block';
-      clearTimeout(toast._t); toast._t=setTimeout(()=> el.style.display='none', 2200);
-    };
-    const setStatus = (t, active)=>{
-      qs('#statusText').textContent=t;
-      qs('#statusDot').className=`h-2 w-2 rounded-full ${active?'bg-emerald-400 animate-pulse':'bg-white/40'}`;
-    };
-
-    // ===== Abre a janela de transmissão com TODO o código embutido
-    function openPop(){
-      if(pop && !pop.closed){ pop.focus(); return; }
-      pop = window.open('', 'apresentacao', 'width=1280,height=720,menubar=no,toolbar=no,location=no,status=no');
-      if(!pop){ toast('Pop-up bloqueado. Permita pop-ups.', false); return; }
-      pop.document.write(`<!DOCTYPE html><html><head><meta charset='utf-8'><title>Transmissão</title>
-        <style>
-          html,body{margin:0;height:100%;background:#000;overflow:hidden}
-          #bg{position:fixed;inset:0;width:100%;height:100%;object-fit:contain;background:#000}
-          #cam{position:fixed;right:16px;bottom:16px;width:220px;height:220px;border-radius:50%;overflow:hidden;box-shadow:0 10px 20px rgba(0,0,0,.35);border:4px solid #4f46e5;object-fit:cover}
-          .hidden{display:none}
-          #hint{position:fixed;top:12px;left:12px;color:#fff9; font: 12px system-ui}
-        </style>
-      </head><body>
-        <video id='bg' autoplay playsinline></video>
-        <video id='cam' autoplay muted playsinline class='hidden'></video>
-        <div id='hint'>Esta é a janela transmitida. Não há menus aqui.</div>
-        <script>
-          const CH = new BroadcastChannel('duo-presenter');
-          const bg = document.getElementById('bg');
-          const cam = document.getElementById('cam');
-          let screenStream = null; let camStream = null; let micOn = true; let flipped=false; let circle=true;
-
-          const message = (m)=> CH.postMessage({type:'toast', payload:m});
-
-          async function share(){
-            try{
-              const disp = await navigator.mediaDevices.getDisplayMedia({ video:{cursor:'always'}, audio:{ echoCancellation:true, noiseSuppression:true } });
-              screenStream = disp; bg.srcObject = disp; message('Tela/Janela compartilhada');
-              disp.getVideoTracks()[0].onended = ()=>{ bg.srcObject=null; CH.postMessage({type:'status', payload:{text:'Parado', active:false}}); };
-              // aplica estado de mic
-              disp.getAudioTracks().forEach(t=> t.enabled = micOn);
-              CH.postMessage({type:'status', payload:{text:'Transmitindo', active:true}});
-            }catch(e){ message('Compartilhar tela cancelado/negado'); }
-          }
-          async function startCam(){
-            try{
-              const cs = await navigator.mediaDevices.getUserMedia({ video:{width:{ideal:1280},height:{ideal:720}}, audio:false });
-              camStream = cs; cam.srcObject = cs; cam.classList.remove('hidden');
-              applyFlip();
-            }catch(e){ message('Acesso à câmera negado'); }
-          }
-          function stopAll(){
-            if(screenStream){ screenStream.getTracks().forEach(t=>t.stop()); screenStream=null; bg.srcObject=null; }
-            if(camStream){ camStream.getTracks().forEach(t=>t.stop()); camStream=null; cam.srcObject=null; cam.classList.add('hidden'); }
-            CH.postMessage({type:'status', payload:{text:'Pronto', active:false}});
-          }
-          function toggleMic(){ micOn=!micOn; if(screenStream){ screenStream.getAudioTracks().forEach(t=> t.enabled=micOn); } CH.postMessage({type:'mic', payload:micOn}); }
-          function applyFlip(){ cam.style.transform = flipped?'scaleX(-1)':'none'; }
-          function toggleFlip(){ flipped=!flipped; applyFlip(); }
-          function toggleShape(){ circle=!circle; cam.style.borderRadius = circle? '50%':'16px'; }
-          function setPos(pos){
-            const pad=16, w=cam.offsetWidth, h=cam.offsetHeight;
-            if(pos==='tl'){ cam.style.left=pad+'px'; cam.style.top=pad+'px'; cam.style.right=''; cam.style.bottom=''; }
-            if(pos==='tr'){ cam.style.right=pad+'px'; cam.style.top=pad+'px'; cam.style.left=''; cam.style.bottom=''; }
-            if(pos==='bl'){ cam.style.left=pad+'px'; cam.style.bottom=pad+'px'; cam.style.right=''; cam.style.top=''; }
-            if(pos==='br'){ cam.style.right=pad+'px'; cam.style.bottom=pad+'px'; cam.style.left=''; cam.style.top=''; }
-          }
-          function setSize(sz){ cam.style.width = sz; cam.style.height = sz; }
-
-          // arrastar localmente
-          let drag=false, offX=0, offY=0;
-          cam.addEventListener('mousedown', (e)=>{ drag=true; const r=cam.getBoundingClientRect(); offX=e.clientX-r.left; offY=e.clientY-r.top; document.body.style.userSelect='none'; });
-          document.addEventListener('mousemove', (e)=>{ if(!drag) return; let x=e.clientX-offX, y=e.clientY-offY; const maxX=innerWidth-cam.offsetWidth-8; const maxY=innerHeight-cam.offsetHeight-8; x=Math.max(8,Math.min(x,maxX)); y=Math.max(8,Math.min(y,maxY)); cam.style.left=x+'px'; cam.style.top=y+'px'; cam.style.right=''; cam.style.bottom=''; });
-          document.addEventListener('mouseup', ()=>{ drag=false; document.body.style.userSelect=''; });
-
-          // comandos vindos do controlador
-          CH.onmessage = (ev)=>{
-            const {type, payload} = ev.data || {};
-            if(type==='cmd:start'){ share(); startCam(); }
-            if(type==='cmd:stop'){ stopAll(); }
-            if(type==='cmd:share'){ share(); }
-            if(type==='cmd:cam'){ startCam(); }
-            if(type==='cmd:mic'){ toggleMic(); }
-            if(type==='cmd:flip'){ toggleFlip(); }
-            if(type==='cmd:shape'){ toggleShape(); }
-            if(type==='cmd:pos'){ setPos(payload); }
-            if(type==='cmd:size'){ setSize(payload); }
-            if(type==='cmd:reset'){ stopAll(); setTimeout(()=>{ /* noop */ },10); }
-          };
-
-          // sinaliza pronto ao controlador
-          CH.postMessage({type:'stage:ready'});
-        <\/script>
-      </body></html>`);
-      toast('Janela de transmissão aberta');
+    // pdf.js worker
+    if (window['pdfjsLib']) {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
     }
 
-    // ===== Wire dos botões do controlador
-    document.getElementById('btnOpen').onclick = openPop;
+    document.addEventListener('DOMContentLoaded', () => {
+      // Refs
+      const fileInput = document.getElementById('fileInput');
+      const deckTitle = document.getElementById('deckTitle');
+      const thumbs = document.getElementById('thumbs');
+      const stage = document.getElementById('stage');
+      const ctx = stage.getContext('2d');
+      const prevBtn = document.getElementById('prev');
+      const nextBtn = document.getElementById('next');
+      const playBtn = document.getElementById('play');
+      const counter = document.getElementById('counter');
+      const progress = document.getElementById('progress');
+      const openViewer = document.getElementById('openViewer');
+      const toast = document.getElementById('toast');
 
-    document.getElementById('btnStart').onclick = ()=>{
-      openPop();
-      CH.postMessage({type:'cmd:start'});
-      document.getElementById('btnStart').classList.add('hidden');
-      document.getElementById('btnStop').classList.remove('hidden');
-      setStatus('Aguardando compartilhar…', true);
-    };
-    document.getElementById('btnStop').onclick = ()=>{ CH.postMessage({type:'cmd:stop'}); setStatus('Pronto', false); document.getElementById('btnStart').classList.remove('hidden'); document.getElementById('btnStop').classList.add('hidden'); };
+      const camBubble = document.getElementById('camBubble');
+      const camVideo = document.getElementById('camVideo');
+      const toggleCam = document.getElementById('toggleCam');
+      const flipCam = document.getElementById('flipCam');
+      const shapeCam = document.getElementById('shapeCam');
 
-    document.getElementById('cmdShare').onclick = ()=> CH.postMessage({type:'cmd:share'});
-    document.getElementById('cmdCam').onclick   = ()=> CH.postMessage({type:'cmd:cam'});
-    document.getElementById('cmdMic').onclick   = (e)=>{ CH.postMessage({type:'cmd:mic'}); e.target.textContent = e.target.textContent.includes('ligado')? 'Mic: mudo' : 'Mic: ligado'; };
-    document.getElementById('cmdFlip').onclick  = ()=> CH.postMessage({type:'cmd:flip'});
-    document.getElementById('cmdShape').onclick = (e)=>{ CH.postMessage({type:'cmd:shape'}); e.target.textContent = e.target.textContent.includes('circular')? 'Forma: quadrada' : 'Forma: circular'; };
-    document.querySelectorAll('[data-pos]').forEach(btn=> btn.onclick = ()=> CH.postMessage({type:'cmd:pos', payload: btn.dataset.pos}));
-    document.getElementById('cmdSizeSmall').onclick = ()=> CH.postMessage({type:'cmd:size', payload: '180px'});
-    document.getElementById('cmdSizeLarge').onclick = ()=> CH.postMessage({type:'cmd:size', payload: '300px'});
-    document.getElementById('cmdReset').onclick = ()=> CH.postMessage({type:'cmd:reset'});
+      // State
+      let slides = []; // imagens (HTMLImageElement)
+      let index = 0;
+      let autoplay = false; let timer = null;
+      let pop = null; // janela do público
+      let dragging=false, offX=0, offY=0; let flipped=false; let circle=true;
 
-    // feedbacks vindos da janela de transmissão
-    CH.onmessage = (ev)=>{
-      const {type, payload} = ev.data || {};
-      if(type==='toast'){ toast(payload); }
-      if(type==='status'){ setStatus(payload.text, payload.active); }
-      if(type==='stage:ready'){ setStatus('Transmissão pronta', false); }
-    };
+      // Utils
+      const showToast = (msg, ok=true) => {
+        toast.textContent = msg;
+        toast.className = `fixed left-1/2 -translate-x-1/2 top-5 z-50 rounded-xl px-4 py-2 shadow-lg ${ok? 'bg-emerald-600':'bg-rose-600'} text-white`;
+        toast.style.display = 'block';
+        clearTimeout(showToast._t); showToast._t = setTimeout(()=> toast.style.display='none', 2200);
+      };
 
-    // segurança: fecha status se a janela for fechada manualmente
-    window.addEventListener('message', ()=>{}, false);
+      const fitCanvas = () => {
+        const r = stage.getBoundingClientRect();
+        stage.width = Math.max(800, Math.floor(r.width));
+        stage.height = Math.max(450, Math.floor(r.height));
+      };
+      window.addEventListener('resize', ()=>{ fitCanvas(); render(); sendToPop(); });
+      fitCanvas();
+
+      const render = () => {
+        ctx.fillStyle = '#0f172a'; ctx.fillRect(0,0,stage.width, stage.height);
+        if(!slides.length) return;
+        const img = slides[index];
+        const cw=stage.width, ch=stage.height;
+        const iw=img.naturalWidth, ih=img.naturalHeight;
+        const scale = Math.min(cw/iw, ch/ih);
+        const w=iw*scale, h=ih*scale; const x=(cw-w)/2, y=(ch-h)/2;
+        ctx.drawImage(img,x,y,w,h);
+        counter.textContent = `${index+1} / ${slides.length}`;
+        progress.style.width = `${((index+1)/slides.length)*100}%`;
+      };
+
+      // Popout (janela do público) — só exibe a imagem atual
+      const openPop = () => {
+        if(pop && !pop.closed){ pop.focus(); return pop; }
+        pop = window.open('', 'viewer', 'width=1280,height=768,menubar=no,toolbar=no,location=no,status=no');
+        if(!pop){ showToast('Permita pop-ups para abrir a janela do público', false); return null; }
+        pop.document.write(`<!DOCTYPE html><html><head><meta charset='utf-8'><title>Apresentação</title>
+          <style>html,body{margin:0;height:100%;background:#000;display:grid;place-items:center;overflow:hidden}img{max-width:100%;max-height:100%;object-fit:contain}</style>
+        </head><body><img id='view' alt='slide'></body></html>`);
+        return pop;
+      };
+
+      const sendToPop = () => {
+        if(!pop || pop.closed || !slides.length) return;
+        const img = slides[index];
+        try {
+          // envia o src da imagem atual
+          pop.document.getElementById('view').src = img.src;
+        } catch (e) {}
+      };
+
+      // Carregadores
+      async function loadPDF(file){
+        const url = URL.createObjectURL(file);
+        const pdf = await pdfjsLib.getDocument({ url }).promise;
+        const arr = [];
+        for(let p=1; p<=pdf.numPages; p++){
+          const page = await pdf.getPage(p);
+          const viewport = page.getViewport({ scale: 2 });
+          const c = document.createElement('canvas'); const cx=c.getContext('2d');
+          c.width = viewport.width; c.height = viewport.height;
+          await page.render({ canvasContext: cx, viewport }).promise;
+          const im = new Image(); im.src = c.toDataURL('image/png');
+          await new Promise(r=> im.onload=r);
+          arr.push(im);
+        }
+        return arr;
+      }
+
+      async function loadImages(fileList){
+        const arr = [];
+        const sorted = [...fileList].sort((a,b)=> a.name.localeCompare(b.name, undefined, {numeric:true}));
+        for(const f of sorted){
+          if(!f.type.startsWith('image/')) continue;
+          const im = new Image(); im.src = URL.createObjectURL(f);
+          await new Promise((res,rej)=>{ im.onload=res; im.onerror=rej; });
+          arr.push(im);
+        }
+        return arr;
+      }
+
+      function buildThumbs(){
+        thumbs.innerHTML = '';
+        slides.forEach((img,i)=>{
+          const card = document.createElement('button');
+          card.className = `w-full rounded-xl overflow-hidden ring-1 ring-white/10 mb-2 hover:ring-brand-600 transition ${i===index? 'outline outline-2 outline-brand-600':''}`;
+          const t = document.createElement('img'); t.src = img.src; t.className='w-full block';
+          card.appendChild(t);
+          card.addEventListener('click', ()=>{ index=i; render(); sendToPop(); });
+          thumbs.appendChild(card);
+        });
+      }
+
+      // Eventos UI
+      fileInput.addEventListener('change', async (e)=>{
+        const files = e.target.files;
+        if(!files || !files.length) return;
+        const first = files[0];
+        slides = [];
+        try {
+          if(first.type === 'application/pdf' || first.name.toLowerCase().endsWith('.pdf')){
+            deckTitle.textContent = first.name + ' (PDF)';
+            slides = await loadPDF(first);
+          } else {
+            deckTitle.textContent = files.length>1 ? `${files.length} imagens` : first.name;
+            slides = await loadImages(files);
+          }
+          index = 0; buildThumbs(); render(); sendToPop();
+          showToast('Apresentação carregada');
+        } catch (err) {
+          showToast('Falha ao carregar a apresentação', false);
+        }
+      });
+
+      prevBtn.addEventListener('click', ()=>{ if(!slides.length) return; index = (index-1+slides.length)%slides.length; render(); sendToPop(); });
+      nextBtn.addEventListener('click', ()=>{ if(!slides.length) return; index = (index+1)%slides.length; render(); sendToPop(); });
+      playBtn.addEventListener('click', ()=>{
+        if(!slides.length) return;
+        if(!autoplay){ autoplay=true; playBtn.textContent='⏸ Pausar'; timer=setInterval(()=>{ index=(index+1)%slides.length; render(); sendToPop(); }, 4000); }
+        else { autoplay=false; playBtn.textContent='▶ Reproduzir'; clearInterval(timer); }
+      });
+
+      openViewer.addEventListener('click', ()=>{ openPop(); sendToPop(); });
+
+      // Atalhos de teclado
+      window.addEventListener('keydown', (e)=>{
+        if(e.key==='ArrowRight' || e.key==='PageDown') { nextBtn.click(); }
+        if(e.key==='ArrowLeft' || e.key==='PageUp') { prevBtn.click(); }
+        if(e.key===' ') { e.preventDefault(); playBtn.click(); }
+      });
+
+      // Câmera do apresentador (opcional)
+      const startCam = async ()=>{
+        try{
+          const s = await navigator.mediaDevices.getUserMedia({ video:{ width:{ideal:1280}, height:{ideal:720} }, audio:false });
+          camVideo.srcObject = s; camVideo.dataset.ready='true'; camBubble.classList.remove('hidden');
+          showToast('Câmera ligada');
+        }catch(e){ showToast('Permita acesso à câmera', false); }
+      };
+      toggleCam.addEventListener('click', ()=>{ if(camBubble.classList.contains('hidden')) startCam(); else { try{ camVideo.srcObject.getTracks().forEach(t=>t.stop()); }catch(_){} camVideo.srcObject=null; camBubble.classList.add('hidden'); }});
+      flipCam.addEventListener('click', ()=>{ flipped=!flipped; camVideo.style.transform = flipped? 'scaleX(-1)': 'none'; });
+      shapeCam.addEventListener('click', ()=>{ circle=!circle; camBubble.style.borderRadius = circle? '9999px':'1rem'; });
+
+      // Drag da bolha
+      camBubble.addEventListener('mousedown', (e)=>{ if(e.button!==0) return; dragging=true; const r=camBubble.getBoundingClientRect(); offX=e.clientX-r.left; offY=e.clientY-r.top; document.body.style.userSelect='none'; });
+      document.addEventListener('mousemove', (e)=>{ if(!dragging) return; const maxX=window.innerWidth-camBubble.offsetWidth-8; const maxY=window.innerHeight-camBubble.offsetHeight-8; let x=Math.max(8, Math.min(e.clientX-offX, maxX)); let y=Math.max(8, Math.min(e.clientY-offY, maxY)); camBubble.style.left=x+'px'; camBubble.style.top=y+'px'; camBubble.style.right='auto'; camBubble.style.bottom='auto'; });
+      document.addEventListener('mouseup', ()=>{ dragging=false; document.body.style.userSelect=''; });
+
+      // Inicial
+      render();
+    });
   </script>
 </body>
 </html>
