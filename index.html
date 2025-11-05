@@ -3,10 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Apresentador Studio — Lousa (upload + controle oculto)</title>
+  <title>Apresentador Studio — Lousa (modo transmissão dupla)</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <!-- pdf.js para renderizar PDF localmente -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <script>
     tailwind.config = {
       theme: {
@@ -21,11 +19,10 @@
     video[data-ready="false"] { display: none; }
     .smooth { transition: transform .15s ease, border-radius .2s ease, width .15s ease, height .15s ease, opacity .2s ease; }
     #webcamWrap { cursor: move; }
-    .hidden-print { /* elementos que NUNCA vão para a janela de transmissão (que tem seu próprio DOM) */ }
   </style>
 </head>
 <body class="bg-gray-950 text-white min-h-screen">
-  <!-- Barra superior (ocultável durante a transmissão de tela do PRÓPRIO app) -->
+  <!-- Barra superior -->
   <header id="topbar" class="fixed top-0 inset-x-0 z-40">
     <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-3">
       <div class="flex items-center justify-between rounded-2xl bg-white/5 ring-1 ring-white/10 backdrop-blur px-4 py-2">
@@ -42,70 +39,48 @@
     </div>
   </header>
 
-  <!-- Palco local (render de slides + prévia). Esta janela possui CONTROLES. -->
+  <!-- Palco -->
   <main class="relative h-[100dvh] w-full overflow-hidden pt-16" id="stage">
-    <!-- Canvas para slides no DOM local -->
     <canvas id="stageCanvas" class="absolute inset-0 bg-black w-full h-full"></canvas>
 
-    <!-- Webcam (arrastável clicando e segurando) no DOM local -->
+    <!-- Webcam -->
     <div id="webcamWrap" class="absolute left-4 bottom-4 z-30 hidden select-none">
       <video id="webcamVideo" autoplay muted playsinline data-ready="false" class="smooth h-[220px] w-[220px] object-cover rounded-full ring-4 ring-brand-600 shadow-xl"></video>
     </div>
 
-    <!-- Painel de CONTROLES (NÃO aparece na janela de transmissão) -->
+    <!-- Painel lateral -->
     <section id="panel" class="pointer-events-auto fixed right-4 top-24 z-40 w-[340px] max-w-[92vw] rounded-2xl bg-white/5 ring-1 ring-white/10 backdrop-blur p-4 space-y-3">
       <h2 class="text-sm font-semibold tracking-tight">Controles</h2>
       <div class="grid grid-cols-2 gap-2">
-        <button id="btnScreen" class="col-span-2 bg-white/10 hover:bg-white/20 rounded-lg px-3 py-2 text-sm">Compartilhar tela (padrão)</button>
         <button id="btnPopout" class="col-span-2 bg-white/10 hover:bg-white/20 rounded-lg px-3 py-2 text-sm">Abrir Janela de Transmissão (sem menus)</button>
-        <label class="col-span-2 flex items-center gap-2 bg-white/5 rounded-lg px-3 py-2 cursor-pointer">
-          <input id="fileInput" type="file" class="hidden" accept=".pdf,.png,.jpg,.jpeg,.webp" />
-          <span class="text-sm">📂 Apresentar arquivo (PDF/Imagens)</span>
-        </label>
+        <button id="btnScreenToPopout" class="col-span-2 bg-white/10 hover:bg-white/20 rounded-lg px-3 py-2 text-sm">Escolher Tela/Janela e Enviar ao Popout</button>
         <button id="btnWebcam" class="bg-white/10 hover:bg-white/20 rounded-lg px-3 py-2 text-sm">Câmera</button>
         <button id="btnMic" class="bg-white/10 hover:bg-white/20 rounded-lg px-3 py-2 text-sm">Mic (tela)</button>
         <button id="btnReset" class="col-span-2 bg-white/10 hover:bg-white/20 rounded-lg px-3 py-2 text-sm">Reset UI</button>
         <button id="btnShape" class="bg-white/10 hover:bg-white/20 rounded-lg px-3 py-2 text-sm">Forma câmera</button>
         <button id="btnFlip" class="bg-white/10 hover:bg-white/20 rounded-lg px-3 py-2 text-sm">Espelhar câmera</button>
       </div>
-      <div id="warn" class="hidden text-xs rounded-lg bg-amber-500/20 text-amber-200 p-2">Compartilhar tela pode ser bloqueado em preview. Publique a página para testar display-capture.</div>
+      <div id="warn" class="hidden text-xs rounded-lg bg-amber-500/20 text-amber-200 p-2">Se estiver no preview do navegador, a captura pode ser bloqueada. Publique a página para testar display-capture.</div>
     </section>
 
-    <!-- Barra de apresentação (SOMENTE AQUI, não vai para a janela de transmissão) -->
-    <footer id="presenterBar" class="fixed left-0 right-0 bottom-0 z-50 bg-white/5 ring-1 ring-white/10 backdrop-blur px-4 py-3 flex items-center gap-3 hidden">
-      <button id="prevSlide" class="bg-white/10 hover:bg-white/20 rounded px-3 py-2 text-sm">◀ Anterior</button>
-      <button id="playPause" class="bg-white/10 hover:bg-white/20 rounded px-3 py-2 text-sm">▶ Play</button>
-      <button id="nextSlide" class="bg-white/10 hover:bg-white/20 rounded px-3 py-2 text-sm">Próximo ▶</button>
-      <span id="pageInfo" class="ml-auto text-xs text-white/70">0 / 0</span>
-    </footer>
-
-    <!-- Toast -->
     <div id="toast" class="fixed left-1/2 -translate-x-1/2 top-5 z-50 hidden rounded-lg bg-emerald-600 text-white px-4 py-2 shadow-lg"></div>
   </main>
 
   <script>
-    // Config pdf.js worker
-    if (window['pdfjsLib']) {
-      pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-    }
-
     document.addEventListener('DOMContentLoaded', () => {
-      // Refs
       const topbar = document.getElementById('topbar');
       const panel = document.getElementById('panel');
-      const presenterBar = document.getElementById('presenterBar');
       const statusDot = document.getElementById('statusDot');
       const statusText = document.getElementById('statusText');
       const btnStart = document.getElementById('btnStart');
       const btnStop = document.getElementById('btnStop');
-      const btnScreen = document.getElementById('btnScreen');
       const btnPopout = document.getElementById('btnPopout');
+      const btnScreenToPopout = document.getElementById('btnScreenToPopout');
       const btnWebcam = document.getElementById('btnWebcam');
       const btnMic = document.getElementById('btnMic');
       const btnReset = document.getElementById('btnReset');
       const btnShape = document.getElementById('btnShape');
       const btnFlip = document.getElementById('btnFlip');
-      const fileInput = document.getElementById('fileInput');
       const toast = document.getElementById('toast');
       const warn = document.getElementById('warn');
 
@@ -114,30 +89,15 @@
       const webcamVideo = document.getElementById('webcamVideo');
       const webcamWrap = document.getElementById('webcamWrap');
 
-      const prevSlide = document.getElementById('prevSlide');
-      const nextSlide = document.getElementById('nextSlide');
-      const playPause = document.getElementById('playPause');
-      const pageInfo = document.getElementById('pageInfo');
-
-      // State
-      let screenStream = null; // getDisplayMedia
+      let screenStream = null; // o que você escolher para transmitir
       let webcamStream = null;
       let micOn = true;
       let isCircle = true;
-      let flipped = false; // padrão não espelhado
+      let flipped = false;
       let dragging = false, offX = 0, offY = 0;
 
-      // Slides state
-      let slides = []; // array de imagens (HTMLImageElement) para render
-      let slideIndex = 0;
-      let autoplay = false;
-      let autoplayTimer = null;
+      let pop = null; // janela de transmissão
 
-      // Popout window (somente STAGE sem menus)
-      let pop = null;
-      let bc = new BroadcastChannel('apresentador-stage');
-
-      // Utils
       const showToast = (msg, ok=true) => {
         toast.textContent = msg;
         toast.className = `fixed left-1/2 -translate-x-1/2 top-5 z-50 rounded-lg px-4 py-2 shadow-lg ${ok? 'bg-emerald-600':'bg-rose-600'} text-white`;
@@ -152,193 +112,85 @@
 
       const fitCanvas = () => {
         const rect = stageCanvas.getBoundingClientRect();
-        stageCanvas.width = Math.max(640, Math.floor(rect.width));
-        stageCanvas.height = Math.max(360, Math.floor(rect.height));
+        stageCanvas.width = rect.width; stageCanvas.height = rect.height;
+        ctx.fillStyle = '#000'; ctx.fillRect(0,0,rect.width,rect.height);
       };
-      const clearStage = () => { ctx.fillStyle = '#000'; ctx.fillRect(0,0,stageCanvas.width, stageCanvas.height); };
+      fitCanvas();
+      window.addEventListener('resize', fitCanvas);
 
-      const renderSlide = () => {
-        fitCanvas();
-        clearStage();
-        if (!slides.length) { pageInfo.textContent = '0 / 0'; return; }
-        const img = slides[slideIndex];
-        // cover dentro do canvas mantendo proporção
-        const cw = stageCanvas.width, ch = stageCanvas.height;
-        const iw = img.naturalWidth, ih = img.naturalHeight;
-        const scale = Math.min(cw/iw, ch/ih);
-        const w = iw*scale, h = ih*scale;
-        const x = (cw - w)/2, y = (ch - h)/2;
-        ctx.drawImage(img, x, y, w, h);
-        pageInfo.textContent = `${slideIndex+1} / ${slides.length}`;
-        // avisa popout para renderizar também
-        bc.postMessage({ type: 'slide', index: slideIndex });
-      };
-
-      const stopAutoplay = () => { autoplay=false; playPause.textContent='▶ Play'; if(autoplayTimer) clearInterval(autoplayTimer); autoplayTimer=null; };
-
-      // Carrega PDF em array de imagens
-      const loadPDF = async (file) => {
-        const url = URL.createObjectURL(file);
-        const pdf = await pdfjsLib.getDocument({ url }).promise;
-        slides = [];
-        for (let p=1; p<=pdf.numPages; p++){
-          const page = await pdf.getPage(p);
-          const viewport = page.getViewport({ scale: 1.6 });
-          const c = document.createElement('canvas');
-          const cx = c.getContext('2d');
-          c.width = viewport.width; c.height = viewport.height;
-          await page.render({ canvasContext: cx, viewport }).promise;
-          const img = new Image();
-          img.src = c.toDataURL('image/png');
-          await new Promise(r=> img.onload=r);
-          slides.push(img);
-        }
-        slideIndex = 0; renderSlide(); presenterBar.style.display='flex'; showToast('PDF carregado');
-      };
-
-      // Carrega múltiplas imagens
-      const loadImages = async (files) => {
-        slides = [];
-        const sorted = [...files].sort((a,b)=> a.name.localeCompare(b.name, undefined, {numeric:true}));
-        for(const f of sorted){
-          const img = new Image();
-          img.src = URL.createObjectURL(f);
-          await new Promise((res, rej)=>{ img.onload=res; img.onerror=rej; });
-          slides.push(img);
-        }
-        slideIndex = 0; renderSlide(); presenterBar.style.display='flex'; showToast('Imagens carregadas');
-      };
-
-      // File input handler
-      fileInput.addEventListener('change', async (e)=>{
-        const files = e.target.files;
-        if(!files || !files.length) return;
-        stopAutoplay();
-        const first = files[0];
-        if(first.type === 'application/pdf' || first.name.toLowerCase().endsWith('.pdf')){
-          try{ await loadPDF(first); } catch(err){ showToast('Falha ao ler PDF', false); }
-        } else if (first.type.startsWith('image/')) {
-          try{ await loadImages(files); } catch(err){ showToast('Falha ao ler imagens', false); }
-        } else {
-          showToast('PPTX ainda não suportado no modo local. Exporte para PDF ou imagens.', false);
-        }
-      });
-
-      // Navegação
-      prevSlide.addEventListener('click', ()=>{ if(!slides.length) return; slideIndex = (slideIndex-1+slides.length)%slides.length; renderSlide(); });
-      nextSlide.addEventListener('click', ()=>{ if(!slides.length) return; slideIndex = (slideIndex+1)%slides.length; renderSlide(); });
-      playPause.addEventListener('click', ()=>{
-        if(!slides.length) return;
-        if(!autoplay){ autoplay=true; playPause.textContent='⏸ Pausar'; autoplayTimer=setInterval(()=>{ slideIndex=(slideIndex+1)%slides.length; renderSlide(); }, 4000);} else { stopAutoplay(); }
-      });
-
-      // Webcam
+      // Webcam local (desespelhada por padrão)
       const startWebcam = async () => {
         try{
           const cam = await navigator.mediaDevices.getUserMedia({ video:{ width:{ideal:1280}, height:{ideal:720} }, audio:false });
           webcamStream = cam; webcamVideo.srcObject = cam; webcamVideo.dataset.ready='true'; webcamWrap.classList.remove('hidden');
           flipped=false; webcamVideo.style.transform='none';
-          webcamWrap.style.left='16px';
-          webcamWrap.style.top = `calc(100% - ${webcamWrap.offsetHeight + 24}px)`;
+          webcamWrap.style.left='16px'; webcamWrap.style.top=`calc(100% - ${webcamWrap.offsetHeight + 24}px)`;
           showToast('Câmera ligada');
-          // envia para popout (se existir)
-          if(pop && !pop.closed){ pop.postMessage({ type:'webcam-stream' }, '*', [cam]); }
+          // aplica no popout (clona a track), se aberto
+          if(pop && !pop.closed){ try{ const cloned = new MediaStream(webcamStream.getVideoTracks().map(t=>t.clone())); pop.__applyWebcam(cloned);}catch(e){} }
         }catch(err){ showToast('Permita acesso à câmera', false); }
       };
 
-      // Dragging da bolha
+      // Drag & drop da bolha
       webcamWrap.addEventListener('mousedown', (e)=>{ if(e.button!==0) return; dragging=true; const r=webcamWrap.getBoundingClientRect(); offX=e.clientX-r.left; offY=e.clientY-r.top; document.body.style.userSelect='none'; });
       document.addEventListener('mousemove', (e)=>{ if(!dragging)return; const maxX=window.innerWidth-webcamWrap.offsetWidth-8; const maxY=window.innerHeight-webcamWrap.offsetHeight-8; let x=Math.max(8, Math.min(e.clientX-offX, maxX)); let y=Math.max(8, Math.min(e.clientY-offY, maxY)); webcamWrap.style.left=x+'px'; webcamWrap.style.top=y+'px'; });
       document.addEventListener('mouseup', ()=>{ dragging=false; document.body.style.userSelect=''; });
 
-      // Display capture padrão (irá capturar TUDO que aparece nesta aba — portanto menus desaparecerão)
-      const startDisplay = async () => {
-        try{
-          const disp = await navigator.mediaDevices.getDisplayMedia({ video:{cursor:'always'}, audio:{ echoCancellation:true, noiseSuppression:true } });
-          screenStream = disp; setStatus('Apresentando a tela…', true); showToast('Tela compartilhada');
-          disp.getVideoTracks()[0].onended = stopAll;
-          // Oculta UI local para não aparecer na captura
-          topbar.style.display='none'; panel.style.display='none'; presenterBar.style.display='none';
-        }catch(err){ warn.classList.remove('hidden'); showToast('Não foi possível compartilhar a tela', false); }
-      };
-
-      // Popout: janela limpa somente com o palco (sem menus)
+      // Abre a janela de transmissão limpa
       const openPopout = () => {
         if(pop && !pop.closed){ pop.focus(); return; }
         pop = window.open('', 'transmissao-stage', 'width=1200,height=700,menubar=no,toolbar=no,location=no,status=no');
         if(!pop){ showToast('Bloqueado pelo navegador: permita pop-ups', false); return; }
         pop.document.write(`<!DOCTYPE html><html><head><meta charset='utf-8'><title>Transmissão</title>
-          <style>html,body{margin:0;height:100%;background:#000;overflow:hidden}#c{position:fixed;inset:0;width:100%;height:100%;background:#000}#w{position:fixed;right:16px;bottom:16px;width:220px;height:220px;border-radius:50%;overflow:hidden;box-shadow:0 10px 20px rgba(0,0,0,.35);border:4px solid #4f46e5}</style>
-        </head><body><canvas id='c'></canvas><video id='w' autoplay muted playsinline></video></body></html>`);
-        const pCanvas = pop.document.getElementById('c');
-        const pCtx = pCanvas.getContext('2d');
-        const pWebcam = pop.document.getElementById('w');
-
-        const resizePop = () => { pCanvas.width = pop.innerWidth; pCanvas.height = pop.innerHeight; };
-        pop.addEventListener('resize', resizePop); resizePop();
-
-        // Recebe comandos do canal
-        bc.onmessage = (ev) => {
-          const msg = ev.data;
-          if(msg?.type==='slide'){
-            // desenha o slide atual no popout também
-            const img = slides[msg.index];
-            if(!img) return;
-            const cw=pCanvas.width, ch=pCanvas.height; pCtx.fillStyle='#000'; pCtx.fillRect(0,0,cw,ch);
-            const iw=img.naturalWidth, ih=img.naturalHeight; const scale=Math.min(cw/iw, ch/ih);
-            const w=iw*scale, h=ih*scale; const x=(cw-w)/2, y=(ch-h)/2; pCtx.drawImage(img, x, y, w, h);
-          }
-        };
-
-        // Tenta clonar a webcam para a janela popout
-        if(webcamStream){
-          try {
-            const cloned = new MediaStream(webcamStream.getVideoTracks().map(t=>t.clone()));
-            pWebcam.srcObject = cloned;
-          } catch (e) {
-            // se não der, ao menos segue sem a bolha
-          }
-        }
-        showToast('Janela de transmissão aberta. Compartilhe ESSA janela no prompt do navegador.');
+          <style>html,body{margin:0;height:100%;background:#000;overflow:hidden}#bg{position:fixed;inset:0;width:100%;height:100%;object-fit:contain;background:#000}#cam{position:fixed;right:16px;bottom:16px;width:220px;height:220px;border-radius:50%;overflow:hidden;box-shadow:0 10px 20px rgba(0,0,0,.35);border:4px solid #4f46e5;object-fit:cover}</style>
+        </head><body><video id='bg' autoplay playsinline></video><video id='cam' autoplay muted playsinline></video></body></html>`);
+        const pBg = pop.document.getElementById('bg');
+        const pCam = pop.document.getElementById('cam');
+        // Interfaces que o app principal usa para aplicar streams
+        pop.__applyBackground = (stream) => { pBg.srcObject = stream; };
+        pop.__applyWebcam = (stream) => { pCam.srcObject = stream; };
+        // Se já havia streams, aplica imediatamente
+        if(screenStream){ try{ pop.__applyBackground(screenStream);}catch(e){} }
+        if(webcamStream){ try{ const cloned = new MediaStream(webcamStream.getVideoTracks().map(t=>t.clone())); pop.__applyWebcam(cloned);}catch(e){} }
+        showToast('Popout aberto. Quando o navegador perguntar o que compartilhar, escolha ESTA janela.');
       };
 
-      // Encerrar: volta menus
+      // Escolhe a tela/janela/guia e envia o stream DIRETO para o popout (sem esconder menus daqui)
+      const pickAndSendToPopout = async () => {
+        try{
+          if(!pop || pop.closed) openPopout();
+          const disp = await navigator.mediaDevices.getDisplayMedia({ video:{cursor:'always'}, audio:{ echoCancellation:true, noiseSuppression:true } });
+          screenStream = disp; setStatus('Fonte enviada ao popout', true); showToast('Fonte conectada ao popout');
+          disp.getVideoTracks()[0].onended = () => { setStatus('Pronto', false); };
+          // habilita/desabilita áudio via botão
+          btnMic.textContent = micOn ? 'Mic (tela) ligado' : 'Mic (tela) mudo';
+          disp.getAudioTracks().forEach(t=> t.enabled = micOn);
+          // aplica no popout
+          if(pop && !pop.closed){ pop.__applyBackground(disp); }
+        }catch(err){ warn.classList.remove('hidden'); showToast('Não foi possível capturar a fonte', false); }
+      };
+
       const stopAll = () => {
         if(screenStream){ screenStream.getTracks().forEach(t=>t.stop()); screenStream=null; }
-        if(webcamStream){ webcamStream.getTracks().forEach(t=>t.stop()); webcamStream=null; webcamVideo.srcObject=null; webcamVideo.dataset.ready='false'; }
-        topbar.style.display=''; panel.style.display=''; presenterBar.style.display= slides.length ? 'flex' : 'none';
-        setStatus('Pronto', false); showToast('Apresentação encerrada');
+        if(webcamStream){ webcamStream.getTracks().forEach(t=>t.stop()); webcamStream=null; webcamVideo.srcObject=null; webcamVideo.dataset.ready='false'; webcamWrap.classList.add('hidden'); }
+        btnStart.classList.remove('hidden'); btnStop.classList.add('hidden');
+        topbar.style.display=''; panel.style.display=''; setStatus('Pronto', false);
         if(pop && !pop.closed){ pop.close(); pop=null; }
+        showToast('Apresentação encerrada');
       };
 
-      // UI actions
+      // Ações UI
       btnStart.addEventListener('click', async ()=>{ btnStart.classList.add('hidden'); btnStop.classList.remove('hidden'); await startWebcam(); setStatus('Câmera pronta', true); });
       btnStop.addEventListener('click', stopAll);
-      btnScreen.addEventListener('click', startDisplay);
       btnPopout.addEventListener('click', openPopout);
+      btnScreenToPopout.addEventListener('click', pickAndSendToPopout);
       btnWebcam.addEventListener('click', startWebcam);
       btnMic.addEventListener('click', ()=>{ micOn=!micOn; if(screenStream){ screenStream.getAudioTracks().forEach(t=> t.enabled = micOn); } btnMic.textContent = micOn ? 'Mic (tela) ligado' : 'Mic (tela) mudo'; showToast(micOn? 'Microfone ligado' : 'Microfone mutado', micOn); });
       btnReset.addEventListener('click', ()=>{ webcamVideo.style.width='220px'; webcamVideo.style.height='220px'; isCircle=true; webcamVideo.style.borderRadius='9999px'; flipped=false; webcamVideo.style.transform='none'; webcamWrap.style.left='16px'; webcamWrap.style.top=`calc(100% - ${webcamWrap.offsetHeight + 24}px)`; });
       btnShape.addEventListener('click', ()=>{ isCircle=!isCircle; webcamVideo.style.borderRadius = isCircle ? '9999px' : '1rem'; });
       btnFlip.addEventListener('click', ()=>{ flipped=!flipped; webcamVideo.style.transform = flipped ? 'scaleX(-1)' : 'none'; });
 
-      // Mostrar barra do apresentador quando há slides
-      const maybeShowBar = () => { presenterBar.style.display = slides.length ? 'flex' : 'none'; };
-      const originalRender = renderSlide;
-      // intercept renderSlide to also control bar visibility
-      window.addEventListener('resize', ()=>{ fitCanvas(); renderSlide(); });
-
-      // Inicial
-      fitCanvas();
-      clearStage();
       warn.classList.remove('hidden');
-
-      // Exponha alguns helpers no console (debug)
-      window.__presenter = { next:()=>nextSlide.click(), prev:()=>prevSlide.click(), play:()=>{ if(!autoplay) playPause.click(); }, pause:()=>{ if(autoplay) playPause.click(); }, openPopout };
-
-      // Atualiza barra quando carregar slides
-      const _renderSlide = renderSlide;
-      renderSlide = function(){ _renderSlide(); maybeShowBar(); };
     });
   </script>
 </body>
