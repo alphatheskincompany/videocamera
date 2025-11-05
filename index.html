@@ -38,6 +38,7 @@
         </div>
         <div class="flex items-center gap-2">
           <button id="openPopout" class="btn btn-primary">Abrir Janela de Transmissão</button>
+          <button id="startHere" class="btn btn-ghost" title="Usar este próprio app como fonte (caso pop-up seja bloqueado)">Iniciar aqui (fallback)</button>
           <button id="stopAll" class="btn btn-ghost">Encerrar</button>
         </div>
       </div>
@@ -81,6 +82,7 @@
     const statusText = document.getElementById('statusText');
     const openPopoutBtn = document.getElementById('openPopout');
     const stopAllBtn = document.getElementById('stopAll');
+    const startHereBtn = document.getElementById('startHere');
     const toast = document.getElementById('toast');
 
     const camBubble = document.getElementById('camBubble');
@@ -91,6 +93,7 @@
 
     let pop = null;
     let webcamStream = null;
+    let localShare = { stream: null, overlay: null }; // fallback local
     let flipped = false; let circle=true; let dragging=false, offX=0, offY=0;
 
     const showToast = (msg, ok=true) => {
@@ -177,7 +180,9 @@
 
     // === UI principal
     openPopoutBtn.addEventListener('click', ()=>{
-      openPopout();
+      const p = openPopout();
+      // Se bloqueado, aciona fallback automaticamente
+      if(!p){ startHereShare(); }
     });
 
     stopAllBtn.addEventListener('click', ()=>{
@@ -187,6 +192,50 @@
     });
 
     startCam.addEventListener('click', startWebcam);
+
+    // === Fallback: compartilhar AQUI (sem popout)
+    async function startHereShare(){
+      try{
+        if(localShare.stream){ return; }
+        const disp = await navigator.mediaDevices.getDisplayMedia({ video:{ cursor:'always' }, audio:{ echoCancellation:true, noiseSuppression:true } });
+        localShare.stream = disp;
+        setStatus('Transmitindo (fallback)', true);
+        showToast('Compartilhando direto neste app');
+        // cria overlay clean
+        const ov = document.createElement('div');
+        ov.style.cssText = 'position:fixed;inset:0;background:#000;z-index:9999;display:flex;align-items:center;justify-content:center';
+        const vid = document.createElement('video');
+        vid.autoplay = true; vid.playsInline = true; vid.style.cssText='width:100%;height:100%;object-fit:contain;background:#000';
+        vid.srcObject = disp; ov.appendChild(vid);
+        const cam = document.createElement('video'); cam.autoplay=true; cam.muted=true; cam.playsInline=true;
+        cam.style.cssText='position:fixed;right:16px;bottom:16px;width:220px;height:220px;border-radius:50%;overflow:hidden;box-shadow:0 10px 20px rgba(0,0,0,.35);border:4px solid #4f46e5;object-fit:cover;z-index:10000';
+        if(webcamStream){
+          const clone = new MediaStream(webcamStream.getVideoTracks().map(t=>t.clone()));
+          cam.srcObject = clone; document.body.appendChild(cam);
+        }
+        // botão para encerrar
+        const btn = document.createElement('button');
+        btn.textContent = 'Encerrar (ESC)';
+        btn.style.cssText='position:fixed;top:12px;left:50%;transform:translateX(-50%);padding:8px 12px;border-radius:10px;background:#4f46e5;color:#fff;font-weight:700;z-index:10001;border:none';
+        btn.onclick = stopLocalShare;
+        ov.appendChild(btn);
+        document.body.appendChild(ov);
+        localShare.overlay = ov;
+        // onended
+        disp.getVideoTracks()[0].onended = stopLocalShare;
+        // esc encerra
+        const esc = (e)=>{ if(e.key==='Escape') { stopLocalShare(); window.removeEventListener('keydown', esc);} };
+        window.addEventListener('keydown', esc);
+      }catch(e){ showToast('Captura cancelada/bloqueada', false); }
+    }
+    function stopLocalShare(){
+      try{ localShare.stream?.getTracks().forEach(t=>t.stop()); }catch(e){}
+      if(localShare.overlay){ localShare.overlay.remove(); }
+      localShare = { stream:null, overlay:null };
+      setStatus('Pronto', false);
+    }
+
+    startHereBtn.addEventListener('click', startHereShare);
     flipCam.addEventListener('click', ()=>{ flipped=!flipped; camVideo.style.transform = flipped? 'scaleX(-1)': 'none'; });
     shapeCam.addEventListener('click', ()=>{ circle=!circle; camBubble.style.borderRadius = circle? '9999px':'1rem'; });
 
