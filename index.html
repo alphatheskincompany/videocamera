@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Apresentador Studio — Lousa (modo transmissão dupla)</title>
+  <title>Apresentador Studio — Lousa (popout auto com share)</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
@@ -22,7 +22,7 @@
   </style>
 </head>
 <body class="bg-gray-950 text-white min-h-screen">
-  <!-- Barra superior -->
+  <!-- Barra superior (menus ficam só aqui) -->
   <header id="topbar" class="fixed top-0 inset-x-0 z-40">
     <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-3">
       <div class="flex items-center justify-between rounded-2xl bg-white/5 ring-1 ring-white/10 backdrop-blur px-4 py-2">
@@ -39,21 +39,26 @@
     </div>
   </header>
 
-  <!-- Palco -->
+  <!-- Palco local (apenas referência; transmissão acontece no popout) -->
   <main class="relative h-[100dvh] w-full overflow-hidden pt-16" id="stage">
-    <canvas id="stageCanvas" class="absolute inset-0 bg-black w-full h-full"></canvas>
+    <div class="absolute inset-0 grid place-items-center text-white/60 select-none">
+      <div class="text-center">
+        <div class="text-lg">Clique em <strong>Iniciar apresentação</strong>: abrirei a janela de transmissão e já pedirei a tela/guia para exibir lá.</div>
+        <div class="text-xs mt-2">Você mantém os menus aqui; o público vê apenas a janela popout.</div>
+      </div>
+    </div>
 
-    <!-- Webcam -->
+    <!-- Webcam (arrastável clicando e segurando) -->
     <div id="webcamWrap" class="absolute left-4 bottom-4 z-30 hidden select-none">
       <video id="webcamVideo" autoplay muted playsinline data-ready="false" class="smooth h-[220px] w-[220px] object-cover rounded-full ring-4 ring-brand-600 shadow-xl"></video>
     </div>
 
-    <!-- Painel lateral -->
+    <!-- Painel de CONTROLES (não aparece no popout) -->
     <section id="panel" class="pointer-events-auto fixed right-4 top-24 z-40 w-[340px] max-w-[92vw] rounded-2xl bg-white/5 ring-1 ring-white/10 backdrop-blur p-4 space-y-3">
       <h2 class="text-sm font-semibold tracking-tight">Controles</h2>
       <div class="grid grid-cols-2 gap-2">
         <button id="btnPopout" class="col-span-2 bg-white/10 hover:bg-white/20 rounded-lg px-3 py-2 text-sm">Abrir Janela de Transmissão (sem menus)</button>
-        <button id="btnScreenToPopout" class="col-span-2 bg-white/10 hover:bg-white/20 rounded-lg px-3 py-2 text-sm">Escolher Tela/Janela e Enviar ao Popout</button>
+        <button id="btnScreen" class="col-span-2 bg-white/10 hover:bg-white/20 rounded-lg px-3 py-2 text-sm">Compartilhar tela (enviar para a janela)</button>
         <button id="btnWebcam" class="bg-white/10 hover:bg-white/20 rounded-lg px-3 py-2 text-sm">Câmera</button>
         <button id="btnMic" class="bg-white/10 hover:bg-white/20 rounded-lg px-3 py-2 text-sm">Mic (tela)</button>
         <button id="btnReset" class="col-span-2 bg-white/10 hover:bg-white/20 rounded-lg px-3 py-2 text-sm">Reset UI</button>
@@ -63,19 +68,19 @@
       <div id="warn" class="hidden text-xs rounded-lg bg-amber-500/20 text-amber-200 p-2">Se estiver no preview do navegador, a captura pode ser bloqueada. Publique a página para testar display-capture.</div>
     </section>
 
+    <!-- Toast -->
     <div id="toast" class="fixed left-1/2 -translate-x-1/2 top-5 z-50 hidden rounded-lg bg-emerald-600 text-white px-4 py-2 shadow-lg"></div>
   </main>
 
   <script>
     document.addEventListener('DOMContentLoaded', () => {
-      const topbar = document.getElementById('topbar');
-      const panel = document.getElementById('panel');
+      // Refs
       const statusDot = document.getElementById('statusDot');
       const statusText = document.getElementById('statusText');
       const btnStart = document.getElementById('btnStart');
       const btnStop = document.getElementById('btnStop');
+      const btnScreen = document.getElementById('btnScreen');
       const btnPopout = document.getElementById('btnPopout');
-      const btnScreenToPopout = document.getElementById('btnScreenToPopout');
       const btnWebcam = document.getElementById('btnWebcam');
       const btnMic = document.getElementById('btnMic');
       const btnReset = document.getElementById('btnReset');
@@ -84,20 +89,21 @@
       const toast = document.getElementById('toast');
       const warn = document.getElementById('warn');
 
-      const stageCanvas = document.getElementById('stageCanvas');
-      const ctx = stageCanvas.getContext('2d');
       const webcamVideo = document.getElementById('webcamVideo');
       const webcamWrap = document.getElementById('webcamWrap');
 
-      let screenStream = null; // o que você escolher para transmitir
+      // State
+      let screenStream = null; // captura escolhida pelo usuário
       let webcamStream = null;
       let micOn = true;
       let isCircle = true;
-      let flipped = false;
+      let flipped = false; // padrão não espelhado
       let dragging = false, offX = 0, offY = 0;
 
-      let pop = null; // janela de transmissão
+      // Popout window (somente palco — sem menus)
+      let pop = null;
 
+      // Utils
       const showToast = (msg, ok=true) => {
         toast.textContent = msg;
         toast.className = `fixed left-1/2 -translate-x-1/2 top-5 z-50 rounded-lg px-4 py-2 shadow-lg ${ok? 'bg-emerald-600':'bg-rose-600'} text-white`;
@@ -110,63 +116,65 @@
         statusDot.className = `h-2 w-2 rounded-full ${active? 'bg-emerald-400 animate-pulse':'bg-white/40'}`;
       };
 
-      const fitCanvas = () => {
-        const rect = stageCanvas.getBoundingClientRect();
-        stageCanvas.width = rect.width; stageCanvas.height = rect.height;
-        ctx.fillStyle = '#000'; ctx.fillRect(0,0,rect.width,rect.height);
-      };
-      fitCanvas();
-      window.addEventListener('resize', fitCanvas);
-
-      // Webcam local (desespelhada por padrão)
-      const startWebcam = async () => {
-        try{
-          const cam = await navigator.mediaDevices.getUserMedia({ video:{ width:{ideal:1280}, height:{ideal:720} }, audio:false });
-          webcamStream = cam; webcamVideo.srcObject = cam; webcamVideo.dataset.ready='true'; webcamWrap.classList.remove('hidden');
-          flipped=false; webcamVideo.style.transform='none';
-          webcamWrap.style.left='16px'; webcamWrap.style.top=`calc(100% - ${webcamWrap.offsetHeight + 24}px)`;
-          showToast('Câmera ligada');
-          // aplica no popout (clona a track), se aberto
-          if(pop && !pop.closed){ try{ const cloned = new MediaStream(webcamStream.getVideoTracks().map(t=>t.clone())); pop.__applyWebcam(cloned);}catch(e){} }
-        }catch(err){ showToast('Permita acesso à câmera', false); }
+      // --- Popout helpers
+      const waitForPopAPI = async () => {
+        // aguarda o popout ter as funções expostas
+        for(let i=0;i<40;i++){ // ~2s
+          if(pop && !pop.closed && pop.__applyBackground && pop.__applyWebcam) return true;
+          await new Promise(r=> setTimeout(r, 50));
+        }
+        return false;
       };
 
-      // Drag & drop da bolha
-      webcamWrap.addEventListener('mousedown', (e)=>{ if(e.button!==0) return; dragging=true; const r=webcamWrap.getBoundingClientRect(); offX=e.clientX-r.left; offY=e.clientY-r.top; document.body.style.userSelect='none'; });
-      document.addEventListener('mousemove', (e)=>{ if(!dragging)return; const maxX=window.innerWidth-webcamWrap.offsetWidth-8; const maxY=window.innerHeight-webcamWrap.offsetHeight-8; let x=Math.max(8, Math.min(e.clientX-offX, maxX)); let y=Math.max(8, Math.min(e.clientY-offY, maxY)); webcamWrap.style.left=x+'px'; webcamWrap.style.top=y+'px'; });
-      document.addEventListener('mouseup', ()=>{ dragging=false; document.body.style.userSelect=''; });
-
-      // Abre a janela de transmissão limpa
-      const openPopout = () => {
-        if(pop && !pop.closed){ pop.focus(); return; }
+      const openPopout = async () => {
+        if(pop && !pop.closed){ pop.focus(); return pop; }
         pop = window.open('', 'transmissao-stage', 'width=1200,height=700,menubar=no,toolbar=no,location=no,status=no');
-        if(!pop){ showToast('Bloqueado pelo navegador: permita pop-ups', false); return; }
+        if(!pop){ showToast('Bloqueado pelo navegador: permita pop-ups', false); throw new Error('popup-blocked'); }
         pop.document.write(`<!DOCTYPE html><html><head><meta charset='utf-8'><title>Transmissão</title>
           <style>html,body{margin:0;height:100%;background:#000;overflow:hidden}#bg{position:fixed;inset:0;width:100%;height:100%;object-fit:contain;background:#000}#cam{position:fixed;right:16px;bottom:16px;width:220px;height:220px;border-radius:50%;overflow:hidden;box-shadow:0 10px 20px rgba(0,0,0,.35);border:4px solid #4f46e5;object-fit:cover}</style>
         </head><body><video id='bg' autoplay playsinline></video><video id='cam' autoplay muted playsinline></video></body></html>`);
         const pBg = pop.document.getElementById('bg');
         const pCam = pop.document.getElementById('cam');
-        // Interfaces que o app principal usa para aplicar streams
         pop.__applyBackground = (stream) => { pBg.srcObject = stream; };
         pop.__applyWebcam = (stream) => { pCam.srcObject = stream; };
-        // Se já havia streams, aplica imediatamente
-        if(screenStream){ try{ pop.__applyBackground(screenStream);}catch(e){} }
-        if(webcamStream){ try{ const cloned = new MediaStream(webcamStream.getVideoTracks().map(t=>t.clone())); pop.__applyWebcam(cloned);}catch(e){} }
-        showToast('Popout aberto. Quando o navegador perguntar o que compartilhar, escolha ESTA janela.');
+        showToast('Janela de transmissão aberta.');
+        return pop;
       };
 
-      // Escolhe a tela/janela/guia e envia o stream DIRETO para o popout (sem esconder menus daqui)
+      // Webcam
+      const startWebcam = async () => {
+        try{
+          const cam = await navigator.mediaDevices.getUserMedia({ video:{ width:{ideal:1280}, height:{ideal:720} }, audio:false });
+          webcamStream = cam; webcamVideo.srcObject = cam; webcamVideo.dataset.ready='true'; webcamWrap.classList.remove('hidden');
+          flipped=false; webcamVideo.style.transform='none';
+          webcamWrap.style.left='16px';
+          webcamWrap.style.top = `calc(100% - ${webcamWrap.offsetHeight + 24}px)`;
+          showToast('Câmera ligada');
+          if(pop && !pop.closed){
+            await waitForPopAPI();
+            try{ const cloned = new MediaStream(webcamStream.getVideoTracks().map(t=>t.clone())); pop.__applyWebcam(cloned);}catch(e){}
+          }
+        }catch(err){ showToast('Permita acesso à câmera', false); }
+      };
+
+      // Arrastar bolha
+      webcamWrap.addEventListener('mousedown', (e)=>{ if(e.button!==0) return; dragging=true; const r=webcamWrap.getBoundingClientRect(); offX=e.clientX-r.left; offY=e.clientY-r.top; document.body.style.userSelect='none'; });
+      document.addEventListener('mousemove', (e)=>{ if(!dragging) return; const maxX=window.innerWidth-webcamWrap.offsetWidth-8; const maxY=window.innerHeight-webcamWrap.offsetHeight-8; let x=Math.max(8, Math.min(e.clientX-offX, maxX)); let y=Math.max(8, Math.min(e.clientY-offY, maxY)); webcamWrap.style.left=x+'px'; webcamWrap.style.top=y+'px'; });
+      document.addEventListener('mouseup', ()=>{ dragging=false; document.body.style.userSelect=''; });
+
+      // Escolhe a tela/janela/guia e envia o stream DIRETO para o popout
       const pickAndSendToPopout = async () => {
         try{
-          if(!pop || pop.closed) openPopout();
+          if(!pop || pop.closed){ await openPopout(); }
+          await waitForPopAPI();
           const disp = await navigator.mediaDevices.getDisplayMedia({ video:{cursor:'always'}, audio:{ echoCancellation:true, noiseSuppression:true } });
-          screenStream = disp; setStatus('Fonte enviada ao popout', true); showToast('Fonte conectada ao popout');
+          screenStream = disp; setStatus('Fonte enviada ao popout', true); showToast('Tela/guia conectada ao popout');
           disp.getVideoTracks()[0].onended = () => { setStatus('Pronto', false); };
-          // habilita/desabilita áudio via botão
+          // áudio on/off
           btnMic.textContent = micOn ? 'Mic (tela) ligado' : 'Mic (tela) mudo';
           disp.getAudioTracks().forEach(t=> t.enabled = micOn);
           // aplica no popout
-          if(pop && !pop.closed){ pop.__applyBackground(disp); }
+          pop.__applyBackground(disp);
         }catch(err){ warn.classList.remove('hidden'); showToast('Não foi possível capturar a fonte', false); }
       };
 
@@ -174,23 +182,42 @@
         if(screenStream){ screenStream.getTracks().forEach(t=>t.stop()); screenStream=null; }
         if(webcamStream){ webcamStream.getTracks().forEach(t=>t.stop()); webcamStream=null; webcamVideo.srcObject=null; webcamVideo.dataset.ready='false'; webcamWrap.classList.add('hidden'); }
         btnStart.classList.remove('hidden'); btnStop.classList.add('hidden');
-        topbar.style.display=''; panel.style.display=''; setStatus('Pronto', false);
+        setStatus('Pronto', false);
         if(pop && !pop.closed){ pop.close(); pop=null; }
         showToast('Apresentação encerrada');
       };
 
       // Ações UI
-      btnStart.addEventListener('click', async ()=>{ btnStart.classList.add('hidden'); btnStop.classList.remove('hidden'); await startWebcam(); setStatus('Câmera pronta', true); });
+      btnStart.addEventListener('click', async ()=>{
+        // 1) Abre popout
+        try{ await openPopout(); }catch(e){ return; }
+        // 2) Liga webcam e manda clone para popout
+        await startWebcam();
+        // 3) Já pede a tela/guia e envia para o popout
+        await pickAndSendToPopout();
+        // 4) Alterna botões
+        btnStart.classList.add('hidden'); btnStop.classList.remove('hidden');
+      });
       btnStop.addEventListener('click', stopAll);
-      btnPopout.addEventListener('click', openPopout);
-      btnScreenToPopout.addEventListener('click', pickAndSendToPopout);
+      btnPopout.addEventListener('click', async ()=>{ await openPopout(); });
+      btnScreen.addEventListener('click', pickAndSendToPopout);
       btnWebcam.addEventListener('click', startWebcam);
       btnMic.addEventListener('click', ()=>{ micOn=!micOn; if(screenStream){ screenStream.getAudioTracks().forEach(t=> t.enabled = micOn); } btnMic.textContent = micOn ? 'Mic (tela) ligado' : 'Mic (tela) mudo'; showToast(micOn? 'Microfone ligado' : 'Microfone mutado', micOn); });
       btnReset.addEventListener('click', ()=>{ webcamVideo.style.width='220px'; webcamVideo.style.height='220px'; isCircle=true; webcamVideo.style.borderRadius='9999px'; flipped=false; webcamVideo.style.transform='none'; webcamWrap.style.left='16px'; webcamWrap.style.top=`calc(100% - ${webcamWrap.offsetHeight + 24}px)`; });
       btnShape.addEventListener('click', ()=>{ isCircle=!isCircle; webcamVideo.style.borderRadius = isCircle ? '9999px' : '1rem'; });
       btnFlip.addEventListener('click', ()=>{ flipped=!flipped; webcamVideo.style.transform = flipped ? 'scaleX(-1)' : 'none'; });
 
+      // Aviso de preview
       warn.classList.remove('hidden');
+
+      // Guard redimensionamento (mantém bolha na tela)
+      window.addEventListener('resize', ()=>{
+        const rect = webcamWrap.getBoundingClientRect();
+        const maxX = window.innerWidth - webcamWrap.offsetWidth - 8;
+        const maxY = window.innerHeight - webcamWrap.offsetHeight - 8;
+        if(rect.right > window.innerWidth) webcamWrap.style.left = maxX + 'px';
+        if(rect.bottom > window.innerHeight) webcamWrap.style.top = maxY + 'px';
+      });
     });
   </script>
 </body>
